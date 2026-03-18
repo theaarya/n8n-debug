@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>n8n Debug UI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --border: #30363d;
+    --text: #e6edf3; --text2: #8b949e; --text3: #484f58;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149; --blue: #58a6ff;
+    --purple: #bc8cff; --cyan: #39d2c0; --orange: #f0883e;
+    --radius: 8px; --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  }
+
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+
+  /* Side-by-side layout for workflow detail */
+  .wf-layout { display: flex; gap: 16px; height: calc(100vh - 220px); min-height: 300px; }
+  .wf-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .wf-chat { width: 380px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
+  @media (max-width: 900px) { .wf-layout { flex-direction: column; height: auto; } .wf-chat { width: 100%; height: 350px; } }
+
+  /* Header */
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: var(--bg2); margin-bottom: 20px; border-radius: var(--radius); border: 1px solid var(--border); }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header h1 span { color: var(--text2); font-weight: 400; }
+
+  /* Badge */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+  .badge-green { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+  .badge-yellow { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
+  .badge-red { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+  .badge-blue { background: rgba(88, 166, 255, 0.15); color: var(--blue); }
+  .badge-gray { background: rgba(139, 148, 158, 0.15); color: var(--text2); }
+
+  /* Filter bar */
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .filter-bar .search-input { flex: 1; min-width: 200px; }
+  .filter-pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .pill { padding: 4px 12px; border-radius: 16px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--bg); color: var(--text2); transition: all 0.15s; }
+  .pill:hover { border-color: var(--text2); }
+  .pill.active { background: rgba(88, 166, 255, 0.15); border-color: rgba(88, 166, 255, 0.3); color: var(--blue); }
+
+  /* Cards grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; cursor: pointer; transition: border-color 0.15s; }
+  .card:hover { border-color: var(--blue); }
+  .card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px; gap: 8px; }
+  .card-title { font-size: 14px; font-weight: 600; word-break: break-word; }
+  .card-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text2); align-items: center; flex-wrap: wrap; }
+  .card-meta .sep { color: var(--text3); }
+
+  /* Error rate bar */
+  .error-bar { height: 3px; background: var(--bg3); border-radius: 2px; overflow: hidden; margin-top: 10px; }
+  .error-bar-fill { height: 100%; border-radius: 2px; }
+
+  /* Status pill */
+  .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .status-success .status-dot { background: var(--green); }
+  .status-error .status-dot, .status-crashed .status-dot { background: var(--red); }
+  .status-running .status-dot { background: var(--yellow); }
+  .status-waiting .status-dot { background: var(--blue); }
+  .status-new .status-dot { background: var(--text2); }
+
+  /* Search */
+  .search-input { padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 13px; outline: none; }
+  .search-input:focus { border-color: var(--blue); }
+  .search-input::placeholder { color: var(--text3); }
+
+  /* Button */
+  .btn { padding: 6px 14px; background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 12px; cursor: pointer; transition: background 0.15s; }
+  .btn:hover { background: var(--border); }
+  .btn-primary { background: rgba(88, 166, 255, 0.15); border-color: rgba(88, 166, 255, 0.3); color: var(--blue); }
+
+  /* Select */
+  .select { padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 13px; outline: none; }
+
+  /* Loading */
+  .loading { text-align: center; padding: 40px; color: var(--text2); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px; vertical-align: middle; }
+
+  /* Breadcrumb */
+  .breadcrumb { font-size: 13px; color: var(--text2); margin-bottom: 16px; }
+  .breadcrumb a { color: var(--text2); }
+  .breadcrumb a:hover { color: var(--text); }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 60px 20px; color: var(--text2); }
+  .empty-title { font-size: 16px; margin-bottom: 8px; color: var(--text); }
+
+  /* Workflow header */
+  .wf-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .wf-header h2 { font-size: 20px; }
+  .wf-header .n8n-link { font-size: 12px; color: var(--text2); }
+
+  /* Execution list */
+  .exec-item { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s; }
+  .exec-item:hover { border-color: var(--blue); cursor: pointer; }
+  .exec-item.selected { border-color: var(--blue); background: rgba(88, 166, 255, 0.06); box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.2); }
+  .exec-item.error-item { border-left: 3px solid var(--red); }
+  .exec-item.success-item { border-left: 3px solid var(--green); }
+  .exec-item.waiting-item { border-left: 3px solid var(--blue); }
+  .exec-item.running-item { border-left: 3px solid var(--yellow); }
+  .exec-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .exec-id { font-family: var(--mono); font-size: 12px; color: var(--text2); min-width: 60px; }
+  .exec-time { font-size: 12px; color: var(--text2); }
+  .exec-duration { font-size: 12px; color: var(--text3); }
+  .exec-error { margin-top: 6px; padding: 6px 10px; background: rgba(248, 81, 73, 0.08); border: 1px solid rgba(248, 81, 73, 0.15); border-radius: 4px; font-size: 12px; color: var(--red); font-family: var(--mono); word-break: break-word; }
+  .exec-link { font-size: 12px; margin-left: auto; }
+
+  /* Search results */
+  .match-list { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+  .match-entry { padding: 4px 0; font-size: 12px; }
+  .match-node { color: var(--cyan); }
+  .match-dir { color: var(--text3); font-size: 11px; margin-left: 4px; }
+  .match-path { font-family: var(--mono); font-size: 11px; color: var(--purple); }
+  .match-context { font-family: var(--mono); font-size: 11px; color: var(--text2); white-space: pre-wrap; word-break: break-all; }
+  .match-context mark { background: rgba(210, 153, 34, 0.3); color: var(--yellow); border-radius: 2px; padding: 0 2px; }
+
+  /* Progress */
+  .progress-text { font-size: 13px; color: var(--text2); margin-bottom: 12px; }
+
+  /* Summary bar */
+  .summary-bar { display: flex; gap: 16px; padding: 10px 16px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; font-size: 13px; color: var(--text2); flex-wrap: wrap; }
+  .summary-bar .stat { display: flex; align-items: center; gap: 4px; }
+
+  /* Schema panel */
+  .schema-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; max-width: 900px; }
+  .schema-panel-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .schema-panel-header h3 { font-size: 14px; }
+  .schema-panel-header .controls { display: flex; align-items: center; gap: 6px; }
+  .schema-subtitle { padding: 8px 16px; font-size: 11px; color: var(--text3); border-bottom: 1px solid var(--border); }
+
+  .schema-node { border-bottom: 1px solid var(--border); }
+  .schema-node:last-child { border-bottom: none; }
+  .schema-node-header { padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+  .schema-node-header:hover { background: var(--bg3); }
+  .schema-node-header h4 { font-size: 12px; font-weight: 600; }
+  .schema-node-header .node-type { font-size: 10px; color: var(--text3); font-weight: 400; margin-left: 6px; }
+  .schema-node-body { display: none; border-top: 1px solid var(--border); }
+  .schema-node.open .schema-node-body { display: block; }
+  .schema-node.open .chevron { transform: rotate(90deg); }
+  .chevron { color: var(--text3); font-size: 10px; transition: transform 0.15s; margin-right: 6px; }
+
+  /* Field rows */
+  .field-row { display: flex; align-items: baseline; padding: 4px 12px; border-bottom: 1px solid rgba(48, 54, 61, 0.3); font-size: 11px; gap: 6px; }
+  .field-row:last-child { border-bottom: none; }
+  .field-path { font-family: var(--mono); color: var(--text); flex: 2; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .field-type { color: var(--purple); flex: 1; min-width: 40px; flex-shrink: 0; }
+  .field-freq { width: 36px; flex-shrink: 0; text-align: right; font-family: var(--mono); }
+  .field-example { color: var(--text3); flex: 2; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); }
+  .field-header { font-weight: 500; color: var(--text2); background: var(--bg); padding: 5px 12px; }
+
+  /* Drift */
+  .drift-badge { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 9px; background: rgba(248, 81, 73, 0.1); color: var(--red); margin-left: 4px; }
+  .drift-item { padding: 4px 12px; font-size: 10px; color: var(--orange); background: rgba(240, 136, 62, 0.05); border-bottom: 1px solid rgba(48, 54, 61, 0.3); }
+
+  /* Consistency */
+  .consistency { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text2); }
+  .consistency-bar { width: 36px; height: 3px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+  .consistency-fill { height: 100%; border-radius: 2px; }
+
+  /* Chat */
+  .chat-container { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .chat-header { padding: 10px 16px; font-size: 12px; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); background: var(--bg); display: flex; align-items: center; gap: 8px; }
+  .chat-header svg { width: 14px; height: 14px; color: var(--purple); flex-shrink: 0; }
+  .chat-header .chat-badge { font-size: 9px; font-weight: 500; padding: 1px 6px; border-radius: 10px; background: rgba(188, 140, 255, 0.15); color: var(--purple); }
+  .chat-context-bar { padding: 6px 16px; font-size: 11px; color: var(--text3); border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.15); }
+  .chat-context-bar .ctx-exec { color: var(--cyan); font-family: var(--mono); }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .chat-messages::-webkit-scrollbar { width: 4px; }
+  .chat-messages::-webkit-scrollbar-track { background: transparent; }
+  .chat-messages::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
+
+  .chat-msg { max-width: 88%; padding: 8px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; word-wrap: break-word; }
+  .chat-msg-user { align-self: flex-end; background: rgba(88, 166, 255, 0.12); color: var(--text); border-bottom-right-radius: 3px; }
+  .chat-msg-assistant { align-self: flex-start; background: var(--bg3); color: var(--text); border-bottom-left-radius: 3px; max-width: 95%; }
+  .chat-msg-assistant code { background: rgba(0,0,0,0.35); padding: 1px 5px; border-radius: 3px; font-family: var(--mono); font-size: 11.5px; }
+  .chat-msg-assistant pre { background: rgba(0,0,0,0.35); padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.45; border: 1px solid rgba(48,54,61,0.5); }
+  .chat-msg-assistant strong { color: var(--blue); font-weight: 600; }
+
+  /* Tool call pills — persist in the chat log */
+  .chat-tool-group { align-self: flex-start; width: 100%; }
+  .chat-tool-pill { display: flex; align-items: center; gap: 6px; padding: 5px 10px; margin: 2px 0; font-size: 11px; color: var(--text2); background: rgba(188, 140, 255, 0.06); border: 1px solid rgba(188, 140, 255, 0.12); border-radius: 6px; font-family: var(--mono); }
+  .chat-tool-pill .tool-icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--purple); }
+  .chat-tool-pill .tool-name { color: var(--purple); font-weight: 500; }
+  .chat-tool-pill .tool-input { color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+  .chat-tool-pill.running { border-color: rgba(88, 166, 255, 0.3); background: rgba(88, 166, 255, 0.06); }
+  .chat-tool-pill.running .tool-icon { color: var(--blue); }
+  .chat-tool-pill.running .tool-name { color: var(--blue); }
+  .chat-tool-pill .tool-spinner { width: 10px; height: 10px; border: 1.5px solid transparent; border-top-color: var(--blue); border-radius: 50%; animation: spin 0.6s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .chat-tool-pill.done .tool-check { color: var(--green); font-size: 10px; flex-shrink: 0; }
+
+  .chat-input-bar { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); }
+  .chat-input { flex: 1; padding: 8px 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: 18px; color: var(--text); font-size: 13px; font-family: inherit; resize: none; outline: none; min-height: 38px; max-height: 120px; transition: border-color 0.15s; }
+  .chat-input:focus { border-color: var(--purple); }
+  .chat-input::placeholder { color: var(--text3); }
+  .chat-send { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; background: rgba(188, 140, 255, 0.15); border: 1px solid rgba(188, 140, 255, 0.3); border-radius: 50%; color: var(--purple); font-size: 16px; cursor: pointer; flex-shrink: 0; transition: all 0.15s; }
+  .chat-send:hover { background: rgba(188, 140, 255, 0.25); }
+  .chat-send:disabled { opacity: 0.3; cursor: not-allowed; }
+  .chat-stop { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; background: rgba(248, 81, 73, 0.15); border: 1px solid rgba(248, 81, 73, 0.3); border-radius: 50%; color: var(--red); font-size: 14px; cursor: pointer; flex-shrink: 0; }
+  .chat-typing { display: inline-block; width: 5px; height: 14px; background: var(--purple); animation: blink 0.8s infinite; vertical-align: middle; margin-left: 2px; border-radius: 1px; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
+  .chat-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 8px; color: var(--text3); padding: 40px 20px; text-align: center; }
+  .chat-empty svg { width: 32px; height: 32px; color: var(--bg3); }
+  .chat-empty .chat-empty-title { font-size: 13px; color: var(--text2); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>n8n Debug <span>/ observability</span></h1>
+    <div><span style="font-size:12px;color:var(--text2)" id="instance-url"></span></div>
+  </div>
+  <div id="app"></div>
+</div>
+
+<script>
+const N8N_INSTANCE = 'https://n8n.tutero.dev';
+const app = document.getElementById('app');
+
+async function api(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+function navigate(hash) { location.hash = hash; }
+
+function route() {
+  const hash = location.hash || '#/';
+  const parts = hash.slice(2).split('/');
+  if (parts[0] === 'workflow' && parts[1]) {
+    renderWorkflowDetail(parts[1]);
+  } else {
+    renderDashboard();
+  }
+}
+window.addEventListener('hashchange', route);
+
+// ── Dashboard ──
+async function renderDashboard() {
+  app.innerHTML = '<div class="loading"><span class="spinner"></span>Loading...</div>';
+  try {
+    const wfRes = await api('/api/workflows');
+    const workflows = wfRes.data ?? wfRes;
+
+    if (!workflows.length) {
+      app.innerHTML = '<div class="empty"><div class="empty-title">No workflows found</div></div>';
+      return;
+    }
+
+    const activeWf = workflows.filter(w => w.active).length;
+
+    let html = `
+      <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;color:var(--text2)">
+        <span>${workflows.length} workflows</span>
+        <span style="color:var(--green)">${activeWf} active</span>
+        <span style="color:var(--text3)">${workflows.length - activeWf} inactive</span>
+      </div>
+      <div class="filter-bar">
+        <input class="search-input" id="wf-search" type="text" placeholder="Filter workflows...">
+        <div class="filter-pills">
+          <span class="pill active" data-filter="all">All</span>
+          <span class="pill" data-filter="active">Active</span>
+          <span class="pill" data-filter="inactive">Inactive</span>
+          <span class="pill" data-filter="recent-errors">Recent Errors</span>
+        </div>
+      </div>
+      <div id="wf-grid" class="grid"></div>`;
+
+    app.innerHTML = html;
+
+    // Fetch stats in background to enrich cards after they're already visible
+    let statsMap = new Map();
+    let statsLoaded = false;
+    api('/api/stats').then(statsRes => {
+      const statsArr = statsRes?.workflows ?? [];
+      for (const s of statsArr) statsMap.set(String(s.id), s);
+      statsLoaded = true;
+      renderCards();
+    }).catch(() => {});
+
+    function renderCards() {
+      const search = document.getElementById('wf-search').value.toLowerCase();
+      const activePill = document.querySelector('.pill.active')?.dataset.filter ?? 'all';
+      const grid = document.getElementById('wf-grid');
+
+      let filtered = workflows;
+      if (search) filtered = filtered.filter(w => w.name.toLowerCase().includes(search));
+      if (activePill === 'active') filtered = filtered.filter(w => w.active);
+      else if (activePill === 'inactive') filtered = filtered.filter(w => !w.active);
+      else if (activePill === 'recent-errors') filtered = filtered.filter(w => (statsMap.get(String(w.id))?.errorCount ?? 0) > 0);
+
+      if (!filtered.length) {
+        grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No matching workflows</div>';
+        return;
+      }
+
+      let cards = '';
+      for (const wf of filtered) {
+        const s = statsMap.get(String(wf.id));
+        const activeBadge = wf.active ? '<span class="badge badge-green">active</span>' : '<span class="badge badge-gray">inactive</span>';
+        const updated = wf.updatedAt ? formatTime(new Date(wf.updatedAt)) : '';
+
+        let metaHtml = '';
+        if (s) {
+          const errorRate = s.errorRate ?? 0;
+          const color = errorRate > 20 ? 'red' : errorRate > 5 ? 'yellow' : 'green';
+          metaHtml = `<span>${s.totalExecutions} runs</span><span class="sep">/</span>
+            <span style="color:var(--${color})">${s.errorCount} err</span>`;
+        } else if (statsLoaded) {
+          metaHtml = '<span>no runs</span>';
+        } else {
+          metaHtml = `<span style="color:var(--text3)">${updated}</span>`;
+        }
+
+        cards += `
+          <div class="card" onclick="navigate('#/workflow/${wf.id}')">
+            <div class="card-header"><div class="card-title">${esc(wf.name)}</div>${activeBadge}</div>
+            <div class="card-meta">${metaHtml}</div>
+          </div>`;
+      }
+      grid.innerHTML = cards;
+    }
+
+    renderCards();
+    document.getElementById('wf-search').addEventListener('input', renderCards);
+    document.querySelectorAll('.pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        renderCards();
+      });
+    });
+
+  } catch (err) {
+    app.innerHTML = `<div class="empty"><div class="empty-title">Error</div><div>${esc(err.message)}</div></div>`;
+  }
+}
+
+// ── Workflow Detail ──
+async function renderWorkflowDetail(id) {
+  app.innerHTML = '<div class="loading"><span class="spinner"></span>Loading...</div>';
+
+  try {
+    const wf = await api(`/api/workflows/${id}`);
+
+    app.innerHTML = `
+      <div class="breadcrumb"><a href="#/">Dashboard</a> / ${esc(wf.name)}</div>
+      <div class="wf-header">
+        <h2>${esc(wf.name)}</h2>
+        ${wf.active ? '<span class="badge badge-green">active</span>' : '<span class="badge badge-gray">inactive</span>'}
+        <a class="n8n-link" href="${N8N_INSTANCE}/workflow/${id}" target="_blank">Open in n8n</a>
+      </div>
+      <div class="filter-bar">
+        <input class="search-input" id="search-input" style="flex:1;min-width:200px" type="text" placeholder="Search all execution data...">
+        <select class="select" id="status-filter">
+          <option value="">All statuses</option>
+          <option value="success">Success</option>
+          <option value="error">Error</option>
+          <option value="waiting">Waiting</option>
+          <option value="running">Running</option>
+        </select>
+      </div>
+      <div id="search-status"></div>
+      <div id="exec-summary"></div>
+      <div class="wf-layout">
+        <div class="wf-main">
+          <div id="view-tabs" style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:12px;flex-shrink:0">
+            <div class="view-tab active" data-view="executions" style="padding:8px 16px;font-size:13px;color:var(--text);cursor:pointer;border-bottom:2px solid var(--blue)">Executions</div>
+            <div class="view-tab" data-view="schema" style="padding:8px 16px;font-size:13px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent">Data Shape</div>
+          </div>
+          <div id="view-executions" style="flex:1;overflow-y:auto">
+            <div id="exec-list"><div class="loading"><span class="spinner"></span>Loading executions...</div></div>
+          </div>
+          <div id="view-schema" style="display:none;flex:1;overflow-y:auto">
+            <div id="schema-area"></div>
+          </div>
+        </div>
+        <div class="wf-chat">
+          <div class="chat-container">
+            <div class="chat-header">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><path d="M10 22h4"/></svg>
+              AI Assistant
+              <span class="chat-badge">Claude</span>
+              <button id="chat-open-terminal" title="Open in Terminal" style="margin-left:auto;background:none;border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:10px;color:var(--text2);cursor:pointer;font-family:var(--mono);display:flex;align-items:center;gap:4px;" onmouseover="this.style.borderColor='var(--purple)';this.style.color='var(--purple)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                Terminal
+              </button>
+            </div>
+            <div class="chat-context-bar" id="chat-context">Select an execution for context, or just ask</div>
+            <div class="chat-messages" id="chat-messages">
+              <div class="chat-empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <div class="chat-empty-title">Ask anything about this workflow</div>
+                <div style="font-size:11px">Debug errors, understand data flow, run API calls</div>
+              </div>
+            </div>
+            <div class="chat-input-bar">
+              <textarea class="chat-input" id="chat-input" rows="1" placeholder="Ask about this workflow..."></textarea>
+              <button class="chat-send" id="chat-send">&#x2191;</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    let allExecs = [];
+    let searching = false;
+    let searchResultsList = [];
+    let activeEventSource = null;
+    let selectedExecId = null;
+
+    const searchInput = document.getElementById('search-input');
+    const statusFilter = document.getElementById('status-filter');
+
+    function loadAllExecs() {
+      const listDiv = document.getElementById('exec-list');
+      listDiv.innerHTML = '';
+      allExecs = [];
+      const es = new EventSource(`/api/executions/stream?workflowId=${id}`);
+      es.addEventListener('page', (e) => {
+        const page = JSON.parse(e.data);
+        allExecs.push(...page.executions);
+        // Append new items without re-rendering everything
+        let html = '';
+        const statusVal = statusFilter.value;
+        for (const ex of page.executions) {
+          if (statusVal && ex.status !== statusVal) continue;
+          html += renderExecItem(ex, id);
+        }
+        listDiv.insertAdjacentHTML('beforeend', html);
+        renderSummary(allExecs);
+      });
+      es.addEventListener('done', () => {
+        es.close();
+        renderSummary(allExecs);
+        if (!allExecs.length) listDiv.innerHTML = '<div class="empty">No executions found</div>';
+      });
+      es.addEventListener('error', () => {
+        es.close();
+        if (!allExecs.length) listDiv.innerHTML = '<div class="empty" style="color:var(--red)">Failed to load executions</div>';
+      });
+    }
+
+    function renderSummary(execs) {
+      const summary = document.getElementById('exec-summary');
+      const total = execs.length;
+      const success = execs.filter(e => e.status === 'success').length;
+      const errors = execs.filter(e => e.status === 'error' || e.status === 'crashed').length;
+      const waiting = execs.filter(e => e.status === 'waiting').length;
+      const running = execs.filter(e => e.status === 'running').length;
+      summary.innerHTML = `<div class="summary-bar">
+        <span class="stat">${total} total</span>
+        <span class="stat" style="color:var(--green)">${success} success</span>
+        <span class="stat" style="color:var(--red)">${errors} errors</span>
+        ${waiting ? `<span class="stat" style="color:var(--blue)">${waiting} waiting</span>` : ''}
+        ${running ? `<span class="stat" style="color:var(--yellow)">${running} running</span>` : ''}
+      </div>`;
+    }
+
+    function renderExecList() {
+      const listDiv = document.getElementById('exec-list');
+      const statusVal = statusFilter.value;
+      if (searching || searchResultsList.length > 0) {
+        renderSummary(allExecs);
+        renderSearchView(searchResultsList, id);
+        return;
+      }
+      let execs = allExecs;
+      if (statusVal) execs = execs.filter(e => e.status === statusVal);
+      renderSummary(allExecs);
+      if (!execs.length && allExecs.length > 0) { listDiv.innerHTML = '<div class="empty">No matching executions</div>'; return; }
+      let html = '';
+      for (const ex of execs) html += renderExecItem(ex, id);
+      if (html) listDiv.innerHTML = html;
+    }
+
+    function renderExecItem(ex, wfId) {
+      const started = ex.startedAt ? new Date(ex.startedAt) : null;
+      const stopped = ex.stoppedAt ? new Date(ex.stoppedAt) : null;
+      const duration = started && stopped ? formatDuration(stopped - started) : '';
+      const timeStr = started ? formatTime(started) : '';
+      const link = `${N8N_INSTANCE}/workflow/${wfId}/executions/${ex.id}`;
+      const statusClass = ex.status === 'error' || ex.status === 'crashed' ? 'error' : ex.status ?? 'new';
+      const selected = selectedExecId === String(ex.id) ? ' selected' : '';
+      let html = `<div class="exec-item ${statusClass}-item${selected}" data-exec-id="${ex.id}">
+        <div class="exec-row">
+          <span class="status status-${ex.status ?? 'new'}"><span class="status-dot"></span>${ex.status ?? 'unknown'}</span>
+          <span class="exec-id">#${ex.id}</span>
+          <span class="exec-time">${timeStr}</span>
+          ${duration ? `<span class="exec-duration">${duration}</span>` : ''}
+          <a class="exec-link" href="${link}" target="_blank" onclick="event.stopPropagation()">open in n8n</a>
+        </div>`;
+      if ((ex.status === 'error' || ex.status === 'crashed') && ex.errorMessage) {
+        html += `<div class="exec-error">${esc(ex.errorMessage)}</div>`;
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function renderSearchResultItem(r, wfId) {
+      const started = r.startedAt ? new Date(r.startedAt) : null;
+      const stopped = r.stoppedAt ? new Date(r.stoppedAt) : null;
+      const duration = started && stopped ? formatDuration(stopped - started) : '';
+      const timeStr = started ? formatTime(started) : '';
+      const link = `${N8N_INSTANCE}/workflow/${wfId}/executions/${r.executionId}`;
+      const statusClass = r.status === 'error' || r.status === 'crashed' ? 'error' : r.status ?? 'new';
+      const selected = selectedExecId === String(r.executionId) ? ' selected' : '';
+      let html = `<div class="exec-item ${statusClass}-item${selected}" data-exec-id="${r.executionId}">
+        <div class="exec-row">
+          <span class="status status-${r.status}"><span class="status-dot"></span>${r.status}</span>
+          <span class="exec-id">#${r.executionId}</span>
+          <span class="exec-time">${timeStr}</span>
+          ${duration ? `<span class="exec-duration">${duration}</span>` : ''}
+          <span style="font-size:12px;color:var(--text2)">${r.matches.length} match${r.matches.length !== 1 ? 'es' : ''}</span>
+          <a class="exec-link" href="${link}" target="_blank" onclick="event.stopPropagation()">open in n8n</a>
+        </div>
+        <div class="match-list">`;
+      const shown = r.matches.slice(0, 5);
+      for (const m of shown) {
+        const ctx = esc(m.context).replace(/&lt;&lt;/g, '<mark>').replace(/&gt;&gt;/g, '</mark>');
+        html += `<div class="match-entry">
+          <span class="match-node">${esc(m.nodeName)}</span><span class="match-dir">${m.direction}</span>
+          <span class="match-path" style="margin-left:8px">${esc(m.fieldPath)}</span>
+          <div class="match-context">${ctx}</div>
+        </div>`;
+      }
+      if (r.matches.length > 5) html += `<div style="font-size:11px;color:var(--text3);padding:4px 0">+${r.matches.length - 5} more matches</div>`;
+      html += '</div></div>';
+      return html;
+    }
+
+    function renderSearchView(results, wfId) {
+      const listDiv = document.getElementById('exec-list');
+      if (!results.length && !searching) { listDiv.innerHTML = '<div class="empty">No matches found</div>'; return; }
+      if (!results.length && searching) { listDiv.innerHTML = ''; return; }
+      let html = '';
+      for (const r of results) html += renderSearchResultItem(r, wfId);
+      listDiv.innerHTML = html;
+    }
+
+    function cancelSearch() {
+      if (activeEventSource) { activeEventSource.close(); activeEventSource = null; }
+      searching = false;
+    }
+
+    let searchTimer = null;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      const q = searchInput.value.trim();
+      if (!q) { cancelSearch(); searchResultsList = []; document.getElementById('search-status').innerHTML = ''; renderExecList(); return; }
+      searchTimer = setTimeout(() => doSearch(q), 400);
+    });
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { clearTimeout(searchTimer); const q = searchInput.value.trim(); if (q) doSearch(q); }
+    });
+
+    function doSearch(q) {
+      cancelSearch(); searchResultsList = []; searching = true;
+      const statusDiv = document.getElementById('search-status');
+      statusDiv.innerHTML = '<div class="progress-text"><span class="spinner"></span>Scanning executions...</div>';
+      renderExecList();
+      const es = new EventSource(`/api/search?workflowId=${id}&q=${encodeURIComponent(q)}`);
+      activeEventSource = es;
+      es.addEventListener('result', (e) => {
+        const r = JSON.parse(e.data); searchResultsList.push(r);
+        const sv = statusFilter.value;
+        if (!sv || r.status === sv) document.getElementById('exec-list').insertAdjacentHTML('beforeend', renderSearchResultItem(r, id));
+      });
+      es.addEventListener('progress', (e) => {
+        const p = JSON.parse(e.data);
+        statusDiv.innerHTML = `<div class="progress-text"><span class="spinner"></span>Scanned ${p.scanned} executions, ${p.totalMatches} matches in ${searchResultsList.length} executions...</div>`;
+      });
+      es.addEventListener('done', (e) => {
+        const d = JSON.parse(e.data); searching = false; es.close(); activeEventSource = null;
+        const sv = statusFilter.value;
+        const filtered = sv ? searchResultsList.filter(r => r.status === sv) : searchResultsList;
+        statusDiv.innerHTML = `<div class="progress-text">Found ${d.totalMatches} matches across ${filtered.length} executions (scanned ${d.scanned})${sv ? ` — filtered to ${sv}` : ''}</div>`;
+        if (!filtered.length) document.getElementById('exec-list').innerHTML = '<div class="empty">No matches found</div>';
+      });
+      es.addEventListener('error', () => {
+        searching = false; es.close(); activeEventSource = null;
+        if (!searchResultsList.length) statusDiv.innerHTML = '<div class="progress-text" style="color:var(--red)">Search failed</div>';
+        else statusDiv.innerHTML += ' <span style="color:var(--red)">(connection lost)</span>';
+      });
+    }
+
+    statusFilter.addEventListener('change', () => {
+      if (searchResultsList.length) {
+        const sv = statusFilter.value;
+        const filtered = sv ? searchResultsList.filter(r => r.status === sv) : searchResultsList;
+        const list = document.getElementById('exec-list');
+        list.innerHTML = filtered.length ? filtered.map(r => renderSearchResultItem(r, id)).join('') : '<div class="empty">No matches found</div>';
+        const statusDiv = document.getElementById('search-status');
+        const total = filtered.reduce((s, r) => s + r.matches.length, 0);
+        statusDiv.innerHTML = `<div class="progress-text">Found ${total} matches across ${filtered.length} executions${sv ? ` — filtered to ${sv}` : ''}</div>`;
+      } else if (!searching) { renderExecList(); }
+    });
+
+    // ── Execution selection (click to select for chat context) ──
+    document.getElementById('exec-list').addEventListener('click', (e) => {
+      if (e.target.closest('.exec-link')) return; // let "open in n8n" links through
+      const item = e.target.closest('.exec-item');
+      if (!item) return;
+      const execId = item.dataset.execId;
+      if (!execId) return;
+      // Toggle selection
+      if (selectedExecId === execId) {
+        selectedExecId = null;
+      } else {
+        selectedExecId = execId;
+      }
+      // Update visual selection
+      document.querySelectorAll('.exec-item').forEach(el => el.classList.remove('selected'));
+      if (selectedExecId) {
+        const sel = document.querySelector(`.exec-item[data-exec-id="${selectedExecId}"]`);
+        if (sel) sel.classList.add('selected');
+      }
+      // Update chat context bar
+      updateChatContext();
+    });
+
+    function updateChatContext() {
+      const ctx = document.getElementById('chat-context');
+      if (selectedExecId) {
+        const exec = allExecs.find(e => String(e.id) === selectedExecId);
+        const statusColor = exec?.status === 'success' ? 'var(--green)' : exec?.status === 'error' ? 'var(--red)' : 'var(--yellow)';
+        const statusText = exec ? `<span style="color:${statusColor}">${exec.status}</span>` : '';
+        const errorText = exec?.errorMessage ? ` — ${exec.errorMessage.slice(0, 60)}` : '';
+        ctx.innerHTML = `Exec <span class="ctx-exec">#${selectedExecId}</span> ${statusText}${errorText}`;
+        document.getElementById('chat-input').placeholder = `Ask about execution #${selectedExecId}...`;
+      } else {
+        ctx.textContent = 'Select an execution for context, or just ask';
+        document.getElementById('chat-input').placeholder = 'Ask about this workflow...';
+      }
+    }
+
+    // ── Chat initialization ──
+    initChat(id, wf);
+
+    loadAllExecs();
+
+    // Tab switching — schema only loads on first click
+    let schemaLoaded = false;
+    document.querySelectorAll('.view-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.view-tab').forEach(t => {
+          t.style.color = 'var(--text2)';
+          t.style.borderBottomColor = 'transparent';
+          t.classList.remove('active');
+        });
+        tab.style.color = 'var(--text)';
+        tab.style.borderBottomColor = 'var(--blue)';
+        tab.classList.add('active');
+
+        const view = tab.dataset.view;
+        document.getElementById('view-executions').style.display = view === 'executions' ? '' : 'none';
+        document.getElementById('view-schema').style.display = view === 'schema' ? '' : 'none';
+
+        if (view === 'schema' && !schemaLoaded) {
+          schemaLoaded = true;
+          loadSchema(id);
+        }
+      });
+    });
+
+  } catch (err) {
+    app.innerHTML = `<div class="empty"><div class="empty-title">Error</div><div>${esc(err.message)}</div></div>`;
+  }
+}
+
+// ── Schema (sidebar) ──
+async function loadSchema(workflowId) {
+  const area = document.getElementById('schema-area');
+  area.innerHTML = `<div class="schema-panel">
+    <div class="schema-panel-header">
+      <h3>Data Shape</h3>
+      <div class="controls">
+        <select class="select" id="sample-size" style="padding:3px 6px;font-size:11px">
+          <option value="5">5</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
+        </select>
+        <button class="btn btn-primary" id="schema-refresh" style="padding:3px 8px;font-size:11px">Refresh</button>
+      </div>
+    </div>
+    <div class="schema-subtitle">Per-node output fields across recent runs. Frequency = how often a field appears. Drift = inconsistencies.</div>
+    <div id="schema-content"><div class="loading" style="padding:20px"><span class="spinner"></span>Analyzing...</div></div>
+  </div>`;
+
+  async function fetchSchema() {
+    const contentDiv = document.getElementById('schema-content');
+    const size = document.getElementById('sample-size').value;
+    contentDiv.innerHTML = '<div class="loading" style="padding:20px"><span class="spinner"></span>Analyzing...</div>';
+    try {
+      const data = await api(`/api/schema?workflowId=${workflowId}&sampleSize=${size}`);
+      renderSchema(data);
+    } catch (err) {
+      contentDiv.innerHTML = `<div style="padding:16px;color:var(--text2);font-size:12px">${esc(err.message)}</div>`;
+    }
+  }
+
+  function renderSchema(data) {
+    const contentDiv = document.getElementById('schema-content');
+    if (!data.nodes?.length) {
+      contentDiv.innerHTML = '<div style="padding:16px;color:var(--text3);font-size:12px">No execution data to analyze</div>';
+      return;
+    }
+
+    let html = '';
+    for (let i = 0; i < data.nodes.length; i++) {
+      const node = data.nodes[i];
+      const conPct = Math.round(node.consistency * 100);
+      const conColor = conPct > 90 ? 'var(--green)' : conPct > 70 ? 'var(--yellow)' : 'var(--red)';
+      const hasDrift = node.drift?.length > 0;
+
+      html += `<div class="schema-node${i === 0 ? ' open' : ''}" onclick="this.classList.toggle('open')">
+        <div class="schema-node-header">
+          <h4>
+            <span class="chevron">&#9654;</span>${esc(node.nodeName)}
+            ${hasDrift ? `<span class="drift-badge">${node.drift.length} drift</span>` : ''}
+          </h4>
+          <span class="consistency">
+            ${conPct}%
+            <span class="consistency-bar"><span class="consistency-fill" style="width:${conPct}%;background:${conColor}"></span></span>
+          </span>
+        </div>
+        <div class="schema-node-body" onclick="event.stopPropagation()">`;
+
+      if (hasDrift) {
+        for (const d of node.drift) {
+          // Reword drift descriptions
+          let desc = d.description;
+          desc = desc.replace(/Missing in (\d+)\/(\d+) executions/, 'Not present in $1 of $2 recent runs');
+          html += `<div class="drift-item">${esc(d.field)} — ${esc(desc)}</div>`;
+        }
+      }
+
+      if (node.outputShape?.length) {
+        html += `<div class="field-row field-header">
+          <span class="field-path">Field</span>
+          <span class="field-type">Type</span>
+          <span class="field-freq">Freq</span>
+          <span class="field-example">Example</span>
+        </div>`;
+        for (const f of node.outputShape) {
+          const freqPct = Math.round(f.frequency * 100);
+          const freqColor = freqPct === 100 ? 'var(--green)' : freqPct > 70 ? 'var(--yellow)' : 'var(--red)';
+          const depth = (f.path.match(/\./g) || []).length;
+          const indent = depth > 0 ? `padding-left:${12 + depth * 10}px` : '';
+          const shortPath = depth > 0 ? f.path.split('.').pop() : f.path;
+          const prefix = depth > 0 ? '<span style="color:var(--text3);margin-right:2px">.</span>' : '';
+
+          html += `<div class="field-row" style="${indent}">
+            <span class="field-path">${prefix}${esc(shortPath)}</span>
+            <span class="field-type">${esc(f.type)}</span>
+            <span class="field-freq" style="color:${freqColor}">${freqPct}%</span>
+            <span class="field-example">${esc(String(f.example ?? ''))}</span>
+          </div>`;
+        }
+      } else {
+        html += '<div style="padding:8px 12px;color:var(--text3);font-size:11px">No output data</div>';
+      }
+
+      html += '</div></div>';
+    }
+
+    contentDiv.innerHTML = html;
+  }
+
+  document.getElementById('schema-refresh').addEventListener('click', fetchSchema);
+  fetchSchema();
+}
+
+// ── Chat (inline in workflow view) ──
+function initChat(workflowId, wf) {
+  let sessionId = null;
+  let streaming = false;
+  let abortCtrl = null;
+
+  const messagesDiv = document.getElementById('chat-messages');
+  const input = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send');
+
+  function addMessage(role, html) {
+    const div = document.createElement('div');
+    div.className = `chat-msg chat-msg-${role}`;
+    div.innerHTML = html;
+    messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    return div;
+  }
+
+  function renderMarkdown(text) {
+    let out = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
+      '<pre>' + esc(code.trim()) + '</pre>'
+    );
+    out = out.replace(/`([^`]+)`/g, (_, c) => '<code>' + esc(c) + '</code>');
+    out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    const parts = out.split(/(<pre>[\s\S]*?<\/pre>)/);
+    out = parts.map(p => p.startsWith('<pre>') ? p : p.replace(/\n/g, '<br>')).join('');
+    return out;
+  }
+
+  // Access selectedExecId from the outer renderWorkflowDetail closure
+  function getSelectedExecId() {
+    return document.querySelector('.exec-item.selected')?.dataset?.execId ?? null;
+  }
+
+  function toolIcon(running) {
+    if (running) return '<span class="tool-spinner"></span>';
+    return '<span class="tool-check">&#10003;</span>';
+  }
+
+  function friendlyToolName(name) {
+    const map = { 'Bash': 'Terminal', 'Read': 'Read File', 'Write': 'Write File', 'Edit': 'Edit File', 'Grep': 'Search', 'Glob': 'Find Files', 'WebFetch': 'HTTP Fetch', 'WebSearch': 'Web Search' };
+    return map[name] || name;
+  }
+
+  async function sendMessage() {
+    const text = input.value.trim();
+    if (!text || streaming) return;
+
+    // Clear empty state on first message
+    const emptyEl = messagesDiv.querySelector('.chat-empty');
+    if (emptyEl) emptyEl.remove();
+
+    const execId = getSelectedExecId();
+    addMessage('user', esc(text) + (execId ? `<span style="font-size:10px;color:var(--text3);margin-left:6px">#${execId}</span>` : ''));
+    input.value = '';
+    input.style.height = 'auto';
+
+    streaming = true;
+    sendBtn.innerHTML = '&#x25A0;';
+    sendBtn.className = 'chat-stop';
+    abortCtrl = new AbortController();
+
+    let toolGroup = null;  // container for tool pills between text chunks
+    let currentPill = null;
+    const assistantDiv = addMessage('assistant', '<span class="chat-typing"></span>');
+    let fullText = '';
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workflowId, sessionId, message: text, executionId: execId }),
+        signal: abortCtrl.signal,
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        let eventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) { eventType = line.slice(7); continue; }
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (eventType === 'session') { sessionId = data.sessionId; }
+              else if (eventType === 'delta') {
+                // Mark current tool pill as done
+                if (currentPill) {
+                  currentPill.classList.remove('running');
+                  currentPill.classList.add('done');
+                  currentPill.querySelector('.tool-spinner')?.outerHTML && (currentPill.querySelector('.tool-icon').innerHTML = toolIcon(false));
+                  currentPill = null;
+                }
+                toolGroup = null;
+                fullText += data.text;
+                assistantDiv.innerHTML = renderMarkdown(fullText) + '<span class="chat-typing"></span>';
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+              }
+              else if (eventType === 'tool') {
+                // Create tool group if needed (groups consecutive tool calls)
+                if (!toolGroup) {
+                  toolGroup = document.createElement('div');
+                  toolGroup.className = 'chat-tool-group';
+                  messagesDiv.insertBefore(toolGroup, assistantDiv);
+                }
+                // Mark previous pill as done
+                if (currentPill) {
+                  currentPill.classList.remove('running');
+                  currentPill.classList.add('done');
+                  currentPill.querySelector('.tool-icon').innerHTML = toolIcon(false);
+                }
+                // Create new pill
+                currentPill = document.createElement('div');
+                currentPill.className = 'chat-tool-pill running';
+                const inputStr = data.input ? esc(data.input) : '';
+                currentPill.innerHTML = `<span class="tool-icon">${toolIcon(true)}</span><span class="tool-name">${esc(friendlyToolName(data.name))}</span>${inputStr ? `<span class="tool-input">${inputStr}</span>` : ''}`;
+                toolGroup.appendChild(currentPill);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+              }
+              else if (eventType === 'tool_input') {
+                // Append input detail to the current running pill
+                if (currentPill && data.input) {
+                  let inputEl = currentPill.querySelector('.tool-input');
+                  if (!inputEl) {
+                    inputEl = document.createElement('span');
+                    inputEl.className = 'tool-input';
+                    currentPill.appendChild(inputEl);
+                  }
+                  inputEl.textContent = data.input;
+                  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                }
+              }
+              else if (eventType === 'tool_done') {
+                if (currentPill) {
+                  currentPill.classList.remove('running');
+                  currentPill.classList.add('done');
+                  currentPill.querySelector('.tool-icon').innerHTML = toolIcon(false);
+                  currentPill = null;
+                }
+              }
+            } catch {}
+          }
+        }
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        fullText += fullText ? '\n\n[Error: connection lost]' : '[Error: could not reach Claude CLI. Is `claude` installed?]';
+      }
+    }
+
+    // Finalize any remaining tool pill
+    if (currentPill) {
+      currentPill.classList.remove('running');
+      currentPill.classList.add('done');
+      currentPill.querySelector('.tool-icon').innerHTML = toolIcon(false);
+    }
+    assistantDiv.innerHTML = fullText ? renderMarkdown(fullText) : '<span style="color:var(--text3)">No response</span>';
+    streaming = false;
+    abortCtrl = null;
+    sendBtn.innerHTML = '&#x2191;';
+    sendBtn.className = 'chat-send';
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
+  sendBtn.addEventListener('click', () => {
+    if (streaming && abortCtrl) { abortCtrl.abort(); return; }
+    sendMessage();
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  });
+
+  // Open in Terminal button
+  document.getElementById('chat-open-terminal')?.addEventListener('click', async () => {
+    const execId = getSelectedExecId();
+    const params = new URLSearchParams({ workflowId });
+    if (execId) params.set('executionId', execId);
+    try {
+      const res = await fetch(`/api/chat/terminal?${params}`);
+      if (!res.ok) throw new Error(await res.text());
+      const { launched } = await res.json();
+      if (!launched) throw new Error('Failed to launch terminal');
+    } catch (err) {
+      alert('Could not open terminal: ' + err.message);
+    }
+  });
+}
+
+// ── Helpers ──
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function formatDuration(ms) {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60000);
+  const s = Math.round((ms % 60000) / 1000);
+  return `${m}m ${s}s`;
+}
+
+function formatTime(d) {
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// ── Init ──
+document.getElementById('instance-url').textContent = 'n8n.tutero.dev';
+route();
+</script>
+</body>
+</html>
